@@ -69,6 +69,47 @@ add_library(freertos_config ALIAS stm32cubemx)
 target_compile_definitions(freertos_plus_tcp PRIVATE STM32H563xx)
 target_include_directories(freertos_plus_tcp PRIVATE ${CUBE_MODULE_INCLUDES})
 
+#  - Zenoh Pico
+FetchContent_Declare(zenohpico
+  GIT_REPOSITORY https://github.com/eclipse-zenoh/zenoh-pico.git
+  GIT_TAG        main
+  GIT_SUBMODULES ""
+)
+
+# Building for FreeRTOS
+set(WITH_FREERTOS_PLUS_TCP "ON" CACHE BOOL "" FORCE)
+set(CMAKE_SYSTEM_NAME "GENERIC" CACHE STRING "" FORCE)
+
+# We want the static library
+set(PACKAGING "OFF" CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS "OFF" CACHE BOOL "" FORCE)
+
+# No threads
+set(CHECK_THREADS "OFF" CACHE BOOL "" FORCE)
+set(THREADS_PREFER_PTHREAD_FLAG "OFF" CACHE BOOL "" FORCE)
+
+# No tests
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+
+# Not supported right now
+set(Z_FEATURE_LINK_UDP_MULTICAST 0 CACHE BOOL "" FORCE)
+set(Z_FEATURE_MULTI_THREAD 0 CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(zenohpico)
+
+# Edit the Zenoh Pico CMakeLists.txt to remove any set(CHECK_THREADS ON) line to set(CHECK_THREADS 0)
+set(ZENOH_PICO_CMAKE "${zenohpico_SOURCE_DIR}/CMakeLists.txt")
+file(READ "${ZENOH_PICO_CMAKE}" ZENOH_PICO_CMAKE_CONTENTS)
+string(REPLACE "set(CHECK_THREADS \"ON\")" "set(CHECK_THREADS 0)" ZENOH_PICO_CMAKE_CONTENTS "${ZENOH_PICO_CMAKE_CONTENTS}")
+file(WRITE "${ZENOH_PICO_CMAKE}" "${ZENOH_PICO_CMAKE_CONTENTS}")
+message(STATUS "Patched Zenoh Pico: Disabled CHECK_THREADS in CMakeLists.txt")
+
+target_include_directories(zenohpico_static PRIVATE
+  ${CUBE_MODULE_INCLUDES}
+  "${freertos_plus_tcp_SOURCE_DIR}/source/include"
+)
+target_link_libraries(zenohpico_static freertos_plus_tcp)
 
 # Link directories setup
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
@@ -83,7 +124,6 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
-    "${freertos_plus_tcp_SOURCE_DIR}/source/include/"
 )
 
 # Add project symbols (macros)
@@ -97,6 +137,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 
     # Add user defined libraries
     freertos_plus_tcp
+    zenohpico_static
 )
 
 # Create binary and hex files
