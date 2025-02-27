@@ -70,7 +70,7 @@ extern uint32_t SystemCoreClock;
 #define configCPU_CLOCK_HZ                       ( SystemCoreClock )
 #define configTICK_RATE_HZ                       ((TickType_t)1000)
 #define configMAX_PRIORITIES                     ( 56 )
-#define configMINIMAL_STACK_SIZE                 ((uint16_t)1024)
+#define configMINIMAL_STACK_SIZE                 ((uint16_t)1028)
 #define configTOTAL_HEAP_SIZE                    ((size_t)131072)
 #define configSTACK_ALLOCATION_FROM_SEPARATE_HEAP 0
 #define configMAX_TASK_NAME_LEN                  ( 16 )
@@ -101,7 +101,7 @@ extern uint32_t SystemCoreClock;
 #define configUSE_TIMERS                         1
 #define configTIMER_TASK_PRIORITY                ( 2 )
 #define configTIMER_QUEUE_LENGTH                 10
-#define configTIMER_TASK_STACK_DEPTH             1024
+#define configTIMER_TASK_STACK_DEPTH             1028
 
 /* CMSIS-RTOS V2 flags */
 #define configUSE_OS2_THREAD_SUSPEND_RESUME  1
@@ -163,6 +163,16 @@ header file. */
 
 /* USER CODE BEGIN Defines */
 /* Section where parameter definitions can be added (for instance, to override default ones in FreeRTOS.h) */
+
+#define configTASK_NOTIFICATION_ARRAY_ENTRIES 1
+#define configNUM_THREAD_LOCAL_STORAGE_POINTERS 0
+
+#define configUSE_MALLOC_FAILED_HOOK 0
+#define configUSE_DAEMON_TASK_STARTUP_HOOK 0
+
+#define configUSE_QUEUE_SETS 0
+#define configUSE_NEWLIB_REENTRANT 0
+
 /* USER CODE END Defines */
 
 #endif /* FREERTOS_CONFIG_H */

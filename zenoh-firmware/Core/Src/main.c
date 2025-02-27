@@ -19,7 +19,6 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os2.h"
-#include "eth.h"
 #include "icache.h"
 #include "memorymap.h"
 #include "usart.h"
@@ -28,8 +27,18 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <stdlib.h>
 
+#include "FreeRTOS.h"
 #include "FreeRTOS_IP.h"
+#include "FreeRTOS_ARP.h"
+#include "task.h"
+
+#ifndef ZENOH_FREERTOS_PLUS_TCP
+  #define ZENOH_FREERTOS_PLUS_TCP
+#endif
+
+#include <zenoh-pico.h>
 
 /* USER CODE END Includes */
 
@@ -63,12 +72,164 @@ void MX_FREERTOS_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#define APP_TASK_STACK_DEPTH configMINIMAL_STACK_SIZE
+#define APP_TASK_PRIORITY 10
+
+#define MODE "client"
+#define LOCATOR ""  // If empty, it will scout
+#define KEYEXPR "demo/example/**"
+
+static const uint8_t ucIPAddress[] = {192, 168, 1, 80};
+static const uint8_t ucNetMask[] = {255, 255, 255, 0};
+static const uint8_t ucGatewayAddress[] = {192, 168, 1, 1};
+static const uint8_t ucDNSServerAddress[] = {192, 168, 1, 1};
+static const uint8_t ucMACAddress[] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
+
+NetworkInterface_t *pxLibslirp_FillInterfaceDescriptor(BaseType_t xEMACIndex, NetworkInterface_t *pxInterface);
+
+static NetworkInterface_t xInterface;
+static NetworkEndPoint_t xEndPoint;
+
+static TaskHandle_t xAppTaskHandle;
+static StaticTask_t xAppTaskTCB;
+static StackType_t uxAppTaskStack[APP_TASK_STACK_DEPTH];
+
+void data_handler(z_loaned_sample_t *sample, void *ctx) {
+  (void)(ctx);
+  z_view_string_t keystr;
+  z_keyexpr_as_view_string(z_sample_keyexpr(sample), &keystr);
+  z_owned_string_t value;
+  z_bytes_to_string(z_sample_payload(sample), &value);
+  printf(">> [Subscriber] Received ('%.*s': '%.*s')\n", (int)z_string_len(z_loan(keystr)),
+         z_string_data(z_loan(keystr)), (int)z_string_len(z_loan(value)), z_string_data(z_loan(value)));
+  z_drop(z_move(value));
+}
+
+void app_main(void) {
+  z_owned_config_t config;
+  z_config_default(&config);
+  zp_config_insert(z_loan_mut(config), Z_CONFIG_MODE_KEY, MODE);
+  if (strcmp(LOCATOR, "") != 0) {
+      if (strcmp(MODE, "client") == 0) {
+          zp_config_insert(z_loan_mut(config), Z_CONFIG_CONNECT_KEY, LOCATOR);
+      } else {
+          zp_config_insert(z_loan_mut(config), Z_CONFIG_LISTEN_KEY, LOCATOR);
+      }
+  }
+
+  printf("Opening session...\n");
+  z_owned_session_t s;
+  if (z_open(&s, z_move(config), NULL) < 0) {
+      printf("Unable to open session!\n");
+      return;
+  }
+
+  // Start read and lease tasks for zenoh-pico
+  if (zp_start_read_task(z_loan_mut(s), NULL) < 0 || zp_start_lease_task(z_loan_mut(s), NULL) < 0) {
+      printf("Unable to start read and lease tasks\n");
+      z_session_drop(z_session_move(&s));
+      return;
+  }
+
+  z_owned_closure_sample_t callback;
+  z_closure(&callback, data_handler, NULL, NULL);
+  printf("Declaring Subscriber on '%s'...\n", KEYEXPR);
+  z_view_keyexpr_t ke;
+  z_view_keyexpr_from_str_unchecked(&ke, KEYEXPR);
+  z_owned_subscriber_t sub;
+  if (z_declare_subscriber(z_loan(s), &sub, z_loan(ke), z_move(callback), NULL) < 0) {
+      printf("Unable to declare subscriber.\n");
+      return;
+  }
+
+  while (1) {
+      z_sleep_s(1);
+  }
+
+  z_drop(z_move(sub));
+
+  z_drop(z_move(s));
+}
+
 void app_task(void *argument)
 {
-  while(1)
-  {
-    printf("Hello, World From main task!\n");
-    osDelay(1000);
+  printf("Waiting for network...\n");
+
+  uint32_t ulNotificationValue = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000));
+
+  if (ulNotificationValue == 0) {
+      printf("Timed out waiting for network.\n");
+  } else {
+      printf("Starting Zenoh App...\n");
+      app_main();
+  }
+
+  vTaskDelete(NULL);
+}
+void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer,
+  uint32_t *pulIdleTaskStackSize) {
+  static StaticTask_t xIdleTaskTCB;
+  static StackType_t uxIdleTaskStack[configMINIMAL_STACK_SIZE];
+
+  *ppxIdleTaskTCBBuffer = &xIdleTaskTCB;
+  *ppxIdleTaskStackBuffer = uxIdleTaskStack;
+  *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
+}
+
+BaseType_t xApplicationGetRandomNumber(uint32_t *pulNumber) {
+  *pulNumber = (uint32_t)rand();
+
+  return pdTRUE;
+}
+
+uint32_t ulApplicationGetNextSequenceNumber(uint32_t /*ulSourceAddress*/, uint16_t /*usSourcePort*/,
+           uint32_t /*ulDestinationAddress*/, uint16_t /*usDestinationPort*/) {
+  uint32_t ulNext = 0;
+  xApplicationGetRandomNumber(&ulNext);
+
+  return ulNext;
+}
+
+const char *pcApplicationHostnameHook(void) { return "FreeRTOS-simulator"; }
+
+void vApplicationIPNetworkEventHook_Multi(eIPCallbackEvent_t eNetworkEvent, struct xNetworkEndPoint * /*xEndPoint*/) {
+  if (eNetworkEvent == eNetworkUp) {
+    printf("Network is up!\n");
+
+    uint32_t ulIPAddress = 0;
+    uint32_t ulNetMask = 0;
+    uint32_t ulGatewayAddress = 0;
+    uint32_t ulDNSServerAddress = 0;
+    char cBuf[50];
+
+    // The network is up and configured. Print out the configuration obtained
+    // from the DHCP server.
+    FreeRTOS_GetEndPointConfiguration(&ulIPAddress, &ulNetMask, &ulGatewayAddress, &ulDNSServerAddress, &xEndPoint);
+
+    // Convert the IP address to a string then print it out.
+    FreeRTOS_inet_ntoa(ulIPAddress, cBuf);
+    printf("IP Address: %s\n", cBuf);
+
+    // Convert the net mask to a string then print it out.
+    FreeRTOS_inet_ntoa(ulNetMask, cBuf);
+    printf("Subnet Mask: %s\n", cBuf);
+
+    // Convert the IP address of the gateway to a string then print it out.
+    FreeRTOS_inet_ntoa(ulGatewayAddress, cBuf);
+    printf("Gateway IP Address: %s\n", cBuf);
+
+    // Convert the IP address of the DNS server to a string then print it out.
+    FreeRTOS_inet_ntoa(ulDNSServerAddress, cBuf);
+    printf("DNS server IP Address: %s\n", cBuf);
+
+    // Make sure MAC address of the gateway is known
+    if (xARPWaitResolution(ulGatewayAddress, pdMS_TO_TICKS(3000)) < 0) {
+      xTaskNotifyGive(xAppTaskHandle);
+    } else {
+      printf("Failed to obtain the MAC address of the gateway!\n");
+    }
+  } else if (eNetworkEvent == eNetworkDown) {
+    printf("IPv4 End Point is down!\n");
   }
 }
 /* USER CODE END 0 */
@@ -104,10 +265,19 @@ int main(void)
   MX_GPIO_Init();
   MX_ICACHE_Init();
   MX_USART3_UART_Init();
-  MX_ETH_Init();
   /* USER CODE BEGIN 2 */
 
-  osThreadNew(app_task, NULL, NULL);
+  memcpy(ipLOCAL_MAC_ADDRESS, ucMACAddress, sizeof(ucMACAddress));
+
+  pxLibslirp_FillInterfaceDescriptor(0, &xInterface);
+
+  FreeRTOS_FillEndPoint(&xInterface, &xEndPoint, ucIPAddress, ucNetMask, ucGatewayAddress, ucDNSServerAddress,
+                        ucMACAddress);
+  xEndPoint.bits.bWantDHCP = 1;
+
+  FreeRTOS_IPInit_Multi();
+
+  xAppTaskHandle = xTaskCreateStatic(app_task, "", APP_TASK_STACK_DEPTH, NULL, APP_TASK_PRIORITY, uxAppTaskStack, &xAppTaskTCB);
 
   /* USER CODE END 2 */
 

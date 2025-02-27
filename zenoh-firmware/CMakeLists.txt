@@ -57,14 +57,21 @@ FetchContent_Declare(freertos_plus_tcp
   GIT_SUBMODULES ""
 )
 
+add_library(freertos_config INTERFACE)
+target_include_directories(freertos_config SYSTEM INTERFACE
+  "${CMAKE_CURRENT_SOURCE_DIR}/Core/Inc"
+)
+target_compile_options(freertos_config INTERFACE -Wno-error)
+
+set(CMAKE_SYSTEM_NAME "Generic" CACHE STRING "" FORCE)
 set(FREERTOS_PLUS_TCP_COMPILER "GCC" CACHE STRING "" FORCE)
 set(FREERTOS_PLUS_TCP_NETWORK_IF "STM32" CACHE STRING "" FORCE)
+set(FREERTOS_PLUS_TCP_BUFFER_ALLOCATION "2" CACHE STRING "" FORCE)
 
 FetchContent_MakeAvailable(freertos_plus_tcp)
 
 # Ad CubeMX is the one providing the FreeRTOS kernel and configuration, we alias the target
 add_library(freertos_kernel ALIAS stm32cubemx)
-add_library(freertos_config ALIAS stm32cubemx)
 
 target_compile_definitions(freertos_plus_tcp PRIVATE STM32H563xx)
 target_include_directories(freertos_plus_tcp PRIVATE ${CUBE_MODULE_INCLUDES})
@@ -76,9 +83,10 @@ FetchContent_Declare(zenohpico
   GIT_SUBMODULES ""
 )
 
+FetchContent_MakeAvailable(zenohpico)
+
 # Building for FreeRTOS
 set(WITH_FREERTOS_PLUS_TCP "ON" CACHE BOOL "" FORCE)
-set(CMAKE_SYSTEM_NAME "GENERIC" CACHE STRING "" FORCE)
 
 # We want the static library
 set(PACKAGING "OFF" CACHE BOOL "" FORCE)
@@ -96,20 +104,29 @@ set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(Z_FEATURE_LINK_UDP_MULTICAST 0 CACHE BOOL "" FORCE)
 set(Z_FEATURE_MULTI_THREAD 0 CACHE BOOL "" FORCE)
 
-FetchContent_MakeAvailable(zenohpico)
+include("${zenohpico_SOURCE_DIR}/cmake/helpers.cmake")
+
+configure_include_project(ZENOHPICO zenohpico zenohpico::lib "../.." zenohpico "https://github.com/eclipse-zenoh/zenoh-pico" "")
 
 # Edit the Zenoh Pico CMakeLists.txt to remove any set(CHECK_THREADS ON) line to set(CHECK_THREADS 0)
+
+add_dependencies(${CMAKE_PROJECT_NAME} zenohpico_static)
+
 set(ZENOH_PICO_CMAKE "${zenohpico_SOURCE_DIR}/CMakeLists.txt")
 file(READ "${ZENOH_PICO_CMAKE}" ZENOH_PICO_CMAKE_CONTENTS)
 string(REPLACE "set(CHECK_THREADS \"ON\")" "set(CHECK_THREADS 0)" ZENOH_PICO_CMAKE_CONTENTS "${ZENOH_PICO_CMAKE_CONTENTS}")
 file(WRITE "${ZENOH_PICO_CMAKE}" "${ZENOH_PICO_CMAKE_CONTENTS}")
 message(STATUS "Patched Zenoh Pico: Disabled CHECK_THREADS in CMakeLists.txt")
 
-target_include_directories(zenohpico_static PRIVATE
-  ${CUBE_MODULE_INCLUDES}
-  "${freertos_plus_tcp_SOURCE_DIR}/source/include"
+target_link_libraries(zenohpico_static
+  freertos_kernel
+  freertos_plus_tcp
 )
-target_link_libraries(zenohpico_static freertos_plus_tcp)
+
+target_include_directories(stm32cubemx INTERFACE
+  "${freertos_plus_tcp_SOURCE_DIR}/source/include/"
+  "${zenohpico_SOURCE_DIR}/include/"
+)
 
 # Link directories setup
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
