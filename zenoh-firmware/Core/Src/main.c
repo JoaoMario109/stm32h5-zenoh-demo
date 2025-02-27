@@ -29,6 +29,8 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 
+#include "FreeRTOS_IP.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -65,7 +67,7 @@ void app_task(void *argument)
 {
   while(1)
   {
-    printf("Hello, World 2!\n");
+    printf("Hello, World From main task!\n");
     osDelay(1000);
   }
 }
