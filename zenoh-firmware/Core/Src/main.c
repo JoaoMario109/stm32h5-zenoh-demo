@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "eth.h"
 #include "icache.h"
 #include "memorymap.h"
 #include "usart.h"
@@ -92,6 +93,7 @@ int main(void)
   MX_GPIO_Init();
   MX_ICACHE_Init();
   MX_USART3_UART_Init();
+  MX_ETH_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
