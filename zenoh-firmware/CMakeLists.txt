@@ -83,8 +83,6 @@ FetchContent_Declare(zenohpico
   GIT_SUBMODULES ""
 )
 
-FetchContent_MakeAvailable(zenohpico)
-
 # Building for FreeRTOS
 set(WITH_FREERTOS_PLUS_TCP "ON" CACHE BOOL "" FORCE)
 
@@ -93,7 +91,7 @@ set(PACKAGING "OFF" CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS "OFF" CACHE BOOL "" FORCE)
 
 # No threads
-set(CHECK_THREADS "OFF" CACHE BOOL "" FORCE)
+set(CHECK_THREADS 0 FORCE)
 set(THREADS_PREFER_PTHREAD_FLAG "OFF" CACHE BOOL "" FORCE)
 
 # No tests
@@ -104,14 +102,13 @@ set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(Z_FEATURE_LINK_UDP_MULTICAST 0 CACHE BOOL "" FORCE)
 set(Z_FEATURE_MULTI_THREAD 0 CACHE BOOL "" FORCE)
 
+FetchContent_MakeAvailable(zenohpico)
+
 include("${zenohpico_SOURCE_DIR}/cmake/helpers.cmake")
 
 configure_include_project(ZENOHPICO zenohpico zenohpico::lib "../.." zenohpico "https://github.com/eclipse-zenoh/zenoh-pico" "")
 
 # Edit the Zenoh Pico CMakeLists.txt to remove any set(CHECK_THREADS ON) line to set(CHECK_THREADS 0)
-
-add_dependencies(${CMAKE_PROJECT_NAME} zenohpico_static)
-
 set(ZENOH_PICO_CMAKE "${zenohpico_SOURCE_DIR}/CMakeLists.txt")
 file(READ "${ZENOH_PICO_CMAKE}" ZENOH_PICO_CMAKE_CONTENTS)
 string(REPLACE "set(CHECK_THREADS \"ON\")" "set(CHECK_THREADS 0)" ZENOH_PICO_CMAKE_CONTENTS "${ZENOH_PICO_CMAKE_CONTENTS}")
