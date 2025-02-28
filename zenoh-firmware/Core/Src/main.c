@@ -29,6 +29,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define STM32H5
+#define ipconfigUSE_IPv4
 #include "FreeRTOS.h"
 #include "FreeRTOS_IP.h"
 #include "FreeRTOS_ARP.h"
@@ -76,16 +78,16 @@ void MX_FREERTOS_Init(void);
 #define APP_TASK_PRIORITY 10
 
 #define MODE "client"
-#define LOCATOR ""  // If empty, it will scout
+#define LOCATOR ""
 #define KEYEXPR "demo/example/**"
 
-static const uint8_t ucIPAddress[] = {192, 168, 1, 80};
+static const uint8_t ucIPAddress[] = {192, 168, 2, 130};
 static const uint8_t ucNetMask[] = {255, 255, 255, 0};
-static const uint8_t ucGatewayAddress[] = {192, 168, 1, 1};
-static const uint8_t ucDNSServerAddress[] = {192, 168, 1, 1};
+static const uint8_t ucGatewayAddress[] = {192, 168, 2, 1};
+static const uint8_t ucDNSServerAddress[] = {192, 168, 2, 1};
 static const uint8_t ucMACAddress[] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
 
-NetworkInterface_t *pxLibslirp_FillInterfaceDescriptor(BaseType_t xEMACIndex, NetworkInterface_t *pxInterface);
+NetworkInterface_t *pxSTM32_FillInterfaceDescriptor(BaseType_t xEMACIndex, NetworkInterface_t *pxInterface);
 
 static NetworkInterface_t xInterface;
 static NetworkEndPoint_t xEndPoint;
@@ -106,6 +108,8 @@ void data_handler(z_loaned_sample_t *sample, void *ctx) {
 }
 
 void app_main(void) {
+  printf("Starting Zenoh App...\n");
+
   z_owned_config_t config;
   z_config_default(&config);
   zp_config_insert(z_loan_mut(config), Z_CONFIG_MODE_KEY, MODE);
@@ -124,6 +128,8 @@ void app_main(void) {
       return;
   }
 
+  printf("Session opened!\n");
+
   // Start read and lease tasks for zenoh-pico
   if (zp_start_read_task(z_loan_mut(s), NULL) < 0 || zp_start_lease_task(z_loan_mut(s), NULL) < 0) {
       printf("Unable to start read and lease tasks\n");
@@ -131,9 +137,10 @@ void app_main(void) {
       return;
   }
 
+  printf("Declaring Subscriber on '%s'...\n", KEYEXPR);
+
   z_owned_closure_sample_t callback;
   z_closure(&callback, data_handler, NULL, NULL);
-  printf("Declaring Subscriber on '%s'...\n", KEYEXPR);
   z_view_keyexpr_t ke;
   z_view_keyexpr_from_str_unchecked(&ke, KEYEXPR);
   z_owned_subscriber_t sub;
@@ -166,6 +173,7 @@ void app_task(void *argument)
 
   vTaskDelete(NULL);
 }
+
 void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer, StackType_t **ppxIdleTaskStackBuffer,
   uint32_t *pulIdleTaskStackSize) {
   static StaticTask_t xIdleTaskTCB;
@@ -267,15 +275,21 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
-  memcpy(ipLOCAL_MAC_ADDRESS, ucMACAddress, sizeof(ucMACAddress));
+  printf("Starting FreeRTOS...\n");
 
-  pxLibslirp_FillInterfaceDescriptor(0, &xInterface);
+  //FreeRTOS_UpdateMACAddress(ucMACAddress);
 
-  FreeRTOS_FillEndPoint(&xInterface, &xEndPoint, ucIPAddress, ucNetMask, ucGatewayAddress, ucDNSServerAddress,
-                        ucMACAddress);
+  pxSTM32_FillInterfaceDescriptor(0, &xInterface);
+
+  FreeRTOS_FillEndPoint(&xInterface, &xEndPoint, ucIPAddress, ucNetMask, ucGatewayAddress, ucDNSServerAddress, ucMACAddress);
   xEndPoint.bits.bWantDHCP = 1;
 
+  printf("Starting FreeRTOS IP stack...\n");
+
+  //FreeRTOS_IPInit( ucIPAddress, ucNetMask, ucGatewayAddress, ucDNSServerAddress, ucMACAddress );
   FreeRTOS_IPInit_Multi();
+
+  printf("Creating App Task...\n");
 
   xAppTaskHandle = xTaskCreateStatic(app_task, "", APP_TASK_STACK_DEPTH, NULL, APP_TASK_PRIORITY, uxAppTaskStack, &xAppTaskTCB);
 
